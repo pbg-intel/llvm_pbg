@@ -546,15 +546,20 @@ void context_impl::createMallocPool(ur_device_handle_t Device,
   void *SuperBlkPtr = nullptr;
   void *RandomWalkParamPtr = nullptr;
   void *DeviceHeapPtr = nullptr;
+  void *DeviceAllocCtx = nullptr;
   getAdapter().call<UrApiKind::urUSMSharedAlloc>(
-      MContext, Device, nullptr, nullptr, sizeof(superblk), &SuperBlkPtr);
+      MContext, Device, nullptr, nullptr, (sizeof(superblk)*(NUM_OF_SUPERBLOCKS_PER_HEAP)*(NUM_OF_HEAP_BLOCKS_PER_SUPERBLOCK)), &SuperBlkPtr);
   getAdapter().call<UrApiKind::urUSMSharedAlloc>(
       MContext, Device, nullptr, nullptr, sizeof(random_walk_params_t),
       &RandomWalkParamPtr);
   getAdapter().call<UrApiKind::urUSMSharedAlloc>(MContext, Device, nullptr,
                                                  nullptr, sizeof(device_heap_t),
                                                  &DeviceHeapPtr);
-  if (!SuperBlkPtr || !RandomWalkParamPtr || !DeviceHeapPtr) {
+
+  getAdapter().call<UrApiKind::urUSMSharedAlloc>(MContext, Device, nullptr,
+                                                 nullptr, sizeof(allocator_context_t),
+                                                 &DeviceAllocCtx);
+  if (!SuperBlkPtr || !RandomWalkParamPtr || !DeviceHeapPtr || !DeviceAllocCtx) {
     std::cout << "Shared USM alloc failed for malloc meta!" << std::endl;
     return;
   }
@@ -564,17 +569,22 @@ void context_impl::createMallocPool(ur_device_handle_t Device,
   DevHPtr->prwalkparams =
       reinterpret_cast<random_walk_params_t *>(RandomWalkParamPtr);
 
+
   // For debug purpose, we initialize random walks fields in host side and print
   // them in device code to see whether matches.
-  DevHPtr->prwalkparams->num_walks = 100;
-  DevHPtr->prwalkparams->walk_length = 999;
-  DevHPtr->prwalkparams->index_range_start = 111;
-  DevHPtr->prwalkparams->index_range_end = 222;
-  DevHPtr->prwalkparams->step_size = 555;
+  DevHPtr->prwalkparams->num_walks = 1;
+  DevHPtr->prwalkparams->walk_length = RANDOM_WALK_LENGTH;
+  DevHPtr->prwalkparams->index_range_start = 0;
+  DevHPtr->prwalkparams->index_range_end = NUM_OF_SUPERBLOCKS_PER_HEAP;
+  DevHPtr->prwalkparams->step_size = 10;
+  DevHPtr->prwalkparams->base_seed = 4593;
+  DevHPtr->prwalkparams->base_subseed = 2;
+  DevHPtr->prwalkparams->initial_pos = 5;
+
   void *HeapBase = nullptr;
   // Alloc Heap for malloc, make it 20M for each device
-  getAdapter().call<UrApiKind::urUSMSharedAlloc>(MContext, Device, nullptr,
-                                                 nullptr, 0x1400000, &HeapBase);
+  getAdapter().call<UrApiKind::urUSMDeviceAlloc>(MContext, Device, nullptr,
+                                                 nullptr, HEAP_SIZE, &HeapBase);
   if (!HeapBase) {
     std::cout << "Malloc Heap alloc failed!" << std::endl;
     return;
@@ -583,12 +593,20 @@ void context_impl::createMallocPool(ur_device_handle_t Device,
             << reinterpret_cast<unsigned long long>(HeapBase) << std::endl;
 
   DevHPtr->base = reinterpret_cast<unsigned long>(HeapBase);
-  DevHPtr->size = 0x1400000;
+  DevHPtr->size = HEAP_SIZE;
+  
+	DevHPtr->blocksize = HEAP_SIZE/ (NUM_OF_HEAP_BLOCKS_PER_SUPERBLOCK * NUM_OF_SUPERBLOCKS_PER_HEAP); // this will always be a multiple of 16 EGL User chooses 104MB 
+
+	DevHPtr->max_num_blocks =  (NUM_OF_HEAP_BLOCKS_PER_SUPERBLOCK * NUM_OF_SUPERBLOCKS_PER_HEAP);
+	
+  struct allocator_context_t* DeviceAllocatorCtx = reinterpret_cast<struct allocator_context_t*> (DeviceAllocCtx);
+  DeviceAllocatorCtx->deviceheap[0] = DevHPtr;
+
 
   // Write DeviceHeap address to device scope
   getAdapter().call<UrApiKind::urEnqueueDeviceGlobalVariableWrite>(
-      Queue, Program, "__DeviceHeapPtr", true, sizeof(DeviceHeapPtr), 0,
-      &DeviceHeapPtr, 0, nullptr, nullptr);
+      Queue, Program, "__DeviceAllocCtxPtr", true, sizeof(DeviceAllocCtx), 0,
+      &DeviceAllocCtx, 0, nullptr, nullptr);
   return;
 }
 
