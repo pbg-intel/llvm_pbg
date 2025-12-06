@@ -124,7 +124,12 @@ void *malloc(size_t size) {
     int modulo_size = (k > 4) ? 1 : (10 / k) ; // value of 10 indicates number of 10percent segments within the whole heap
     int partition_range  =  NUM_OF_SUPERBLOCKS_PER_HEAP / modulo_size ;
 
-    unsigned int local_id = 100 ; //item.get_local_id();// TO DO:: what to use for local ID ..should we use spirv id BuiltInInvocationId
+    unsigned int local_id =  (__spirv_BuiltInWorkgroupSize(1) * __spirv_BuiltInWorkgroupSize(0) *    \
+                            __spirv_BuiltInLocalInvocationId(2)) +                                 \
+                            (__spirv_BuiltInWorkgroupSize(0) *                                      \
+                            __spirv_BuiltInLocalInvocationId(1)) +                                 \
+                            __spirv_BuiltInLocalInvocationId(0);
+                                                        
     int block_range = (modulo_size == 1)? device_heap_ptr->max_num_blocks : (partition_range * NUM_OF_HEAP_BLOCKS_PER_SUPERBLOCK);
     index_range_start = (modulo_size == 1) ? 0 : (local_id % modulo_size)*(partition_range * NUM_OF_HEAP_BLOCKS_PER_SUPERBLOCK);
     index_range_end = index_range_start + (block_range -1);
