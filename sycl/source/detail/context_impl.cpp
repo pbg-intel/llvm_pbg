@@ -569,6 +569,7 @@ void context_impl::createMallocPool(ur_device_handle_t Device,
   DevHPtr->prwalkparams =
       reinterpret_cast<random_walk_params_t *>(RandomWalkParamPtr);
 
+  memset((void*)(DevHPtr->ptr_superblk),0,(NUM_OF_SUPERBLOCKS_PER_HEAP*NUM_OF_HEAP_BLOCKS_PER_SUPERBLOCK*sizeof(superblk)));
 
   // For debug purpose, we initialize random walks fields in host side and print
   // them in device code to see whether matches.
@@ -602,10 +603,20 @@ void context_impl::createMallocPool(ur_device_handle_t Device,
   struct allocator_context_t* DeviceAllocatorCtx = reinterpret_cast<struct allocator_context_t*> (DeviceAllocCtx);
   DeviceAllocatorCtx->deviceheap[0] = DevHPtr;
 
+  std::cout << "Malloc CTX BASE At: 0x" << std::hex
+            << reinterpret_cast<unsigned long long>(DeviceAllocatorCtx) << std::endl;
 
+  std::cout << "Malloc DevHeap PTR At: 0x" << std::hex
+            << reinterpret_cast<unsigned long long>(DeviceAllocatorCtx->deviceheap[0]) << std::endl;
+  
+  std::cout << "Malloc DevHeap RND WALK PTR: 0x" << std::hex
+            << reinterpret_cast<unsigned long long>(DeviceAllocatorCtx->deviceheap[0]->prwalkparams) << std::endl;
+
+    std::cout << "Malloc evHeap SUPERBLK WALK PTR At: 0x" << std::hex
+            << reinterpret_cast<unsigned long long>(DeviceAllocatorCtx->deviceheap[0]->ptr_superblk) << std::endl;
   // Write DeviceHeap address to device scope
   getAdapter().call<UrApiKind::urEnqueueDeviceGlobalVariableWrite>(
-      Queue, Program, "__DeviceAllocCtxPtr", true, sizeof(DeviceAllocCtx), 0,
+      Queue, Program, "__DeviceAllocCtxPtr", true, sizeof(unsigned long long), 0,
       &DeviceAllocCtx, 0, nullptr, nullptr);
   return;
 }

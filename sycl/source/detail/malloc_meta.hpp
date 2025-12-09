@@ -1,9 +1,9 @@
-#define HEAP_SIZE                          (0x1400000)
-#define NUM_OF_HEAPS                       (1)
-#define RANDOM_WALK_LENGTH                 (50)
-#define NUM_OF_SUPERBLOCKS_PER_HEAP        (2048)
-#define NUM_OF_HEAP_BLOCKS_PER_SUPERBLOCK  (32)
-#define INCLUDE_UNWINDING                  (1)
+#define HEAP_SIZE                                  (0x800000)//(0x1400000)
+#define NUM_OF_HEAPS                               (1)
+#define RANDOM_WALK_LENGTH                         (1)
+#define NUM_OF_SUPERBLOCKS_PER_HEAP                (2048)
+#define NUM_OF_HEAP_BLOCKS_PER_SUPERBLOCK          (32)
+#define INCLUDE_UNWINDING                          (1)
 
 
 // super block structure
@@ -25,8 +25,8 @@ struct random_walk_params_t {
   int step_size;
   int initial_pos;
 
-  unsigned long long base_seed;
-  unsigned long long base_subseed;
+  unsigned  long base_seed;
+  unsigned  long base_subseed;
 };
 
 struct device_heap_t {

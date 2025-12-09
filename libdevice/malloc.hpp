@@ -1,11 +1,11 @@
 #pragma once
 #include "spirv_vars.h"
-#include "atomic.hpp"
+
 #include "onemkl_philox4x32x10_uniform_bernoulli.hpp"
 
-#define HEAP_SIZE                                  (0x1400000)
+#define HEAP_SIZE                                  (0x800000)
 #define NUM_OF_HEAPS                               (1)
-#define RANDOM_WALK_LENGTH                         (50)
+#define RANDOM_WALK_LENGTH                         (1)
 #define NUM_OF_SUPERBLOCKS_PER_HEAP                (2048)
 #define NUM_OF_HEAP_BLOCKS_PER_SUPERBLOCK          (32)
 #define INCLUDE_UNWINDING                          (1)
@@ -13,9 +13,10 @@
 #define HEAP_20_PERCENT_PARTITION                  (HEAP_10_PERCENT_PARTITION * 2)  // upto 20%
 #define NUM_PARTITIONS_IN_BLOCK                    (8)
 #define FRAGMENTATION_MARGIN_IN_PERCENTAGE         (10) 
+
 // super block structure
 union superblk {
-  unsigned long SuperblkMetadata;
+  unsigned long  SuperblkMetadata;
   struct {
     unsigned char block_enable_partition_info : 8;
     unsigned char partition_block_occupancy_tracker
@@ -35,20 +36,19 @@ struct random_walk_params_t {
   int step_size;
   int initial_pos;
 
-  unsigned long long base_seed;
-  unsigned long long base_subseed;
+  unsigned long  base_seed;
+  unsigned long  base_subseed;
 };
 
 struct device_heap_t {
-  unsigned long base;
-  unsigned long size;
+  unsigned long  base;
+  unsigned long  size;
   unsigned int blocksize;
   unsigned int max_num_blocks;
 
   unsigned int max_num_heap_partitions;
-  unsigned long *ptr_superblk;
+  unsigned long  *ptr_superblk;
   struct random_walk_params_t *prwalkparams;
-  int *prwalk_path;
 };
 
 struct allocator_context_t
@@ -57,51 +57,93 @@ struct allocator_context_t
 };
 
 
-int dev_malloc(unsigned long* device_superblk, unsigned int start_blk, unsigned int size, unsigned int end_blk, unsigned int base_blk_size);
+int dev_malloc(unsigned long * device_superblk, unsigned int start_blk, unsigned int size, unsigned int end_blk, unsigned int base_blk_size);
+unsigned int dev_free(unsigned long* device_superblk, unsigned int start_blk, unsigned int byte_offset, unsigned int base_blk_size);
 
 DeviceGlobal<void *> __DeviceAllocCtxPtr;
 
 #if defined(__SPIR__) || defined(__SPIRV__)
 
 #define __SYCL_CONSTANT__ __attribute__((opencl_constant))
+#define SPIR_GLOBAL __attribute__((opencl_global))
 
+#ifdef INCLUDE_SPIRV_OCL_PRINT
 static const __SYCL_CONSTANT__ char __malloc_prwalk_debug[] =
     "[kernel] random walk params fileds: num_walks=%d, walk_length=%d, "
     "index_range_start=%d, index_range_end=%d, step_size=%d\n";
 
+
+static const __SYCL_CONSTANT__ char __malloc_prwalk_debug1[] =
+    "hello world: local_id=%d\n";
+static const __SYCL_CONSTANT__ char __malloc_prwalk_debug2[] =
+    "hello world: ADDR=%lx\n";
+
+static const __SYCL_CONSTANT__ char __malloc_prwalk_debug3[] =
+    "hello world: ADDR=%lx\n";
+
+static const __SYCL_CONSTANT__ char __malloc_prwalk_debug4[] =
+    "Free Success: ADDR=%lx\n";
+
+static const __SYCL_CONSTANT__ char __malloc_prwalk_debug5[] =
+    "Free Failed: ADDR=%lx\n";
+#endif
+
+#ifdef INCLUDE_SPIRV_OCL_PRINT
 extern SYCL_EXTERNAL int
 __spirv_ocl_printf(const __SYCL_CONSTANT__ char *Format, ...);
+#endif
+
 extern DEVICE_EXTERNAL int __spirv_ocl_ctz(int) noexcept ;
 //extern DEVICE_EXTERNAL int __spirv_ocl_clz(unsigned char) noexcept;
 extern DEVICE_EXTERNAL int __spirv_ocl_ctz(unsigned char) noexcept;
 
-//extern SYCL_EXTERNAL int __spirv_AtomicCompareExchange(SYCL_GLOBAL  long long*, int,
- //                                                        int, int, long long,
- //                                                        long long) noexcept;
+extern DEVICE_EXTERNAL unsigned long __spirv_AtomicCompareExchange(unsigned long SPIR_GLOBAL*, int,
+                                                         int, int, unsigned long ,
+                                                         unsigned long ) noexcept;
 
- //extern SYCL_EXTERNAL int __spirv_AtomicCompareExchange(unsigned long*, int,
-//int, int, unsigned long,
-//unsigned long) noexcept;
+ //extern SYCL_EXTERNAL int __spirv_AtomicCompareExchange(unsigned long *, int,
+//int, int, unsigned long ,
+//unsigned long ) noexcept;
 
-//extern SYCL_EXTERNAL int __spirv_AtomicLoad(unsigned long*, int,
-//int) noexcept;
+extern DEVICE_EXTERNAL unsigned long __spirv_AtomicLoad(unsigned long SPIR_GLOBAL*, int,
+int) noexcept;
 
-//extern DEVICE_EXTERNAL unsigned long __spirv_AtomicLoad(SPIR_GLOBAL const unsigned long*, int,
+//extern DEVICE_EXTERNAL unsigned long  __spirv_AtomicLoad(SPIR_GLOBAL const unsigned long *, int,
 //                                              int) noexcept;
 DEVICE_EXTERN_C
 
 void *malloc(size_t size) {
+
+    unsigned long  alloc_ptr = 0;
   struct allocator_context_t *temp = reinterpret_cast<struct allocator_context_t *> (__DeviceAllocCtxPtr.get());
-  device_heap_t *device_heap_ptr = reinterpret_cast<device_heap_t *>(temp->deviceheap);
+
+#ifdef INCLUDE_SPIRV_OCL_PRINT
+   __spirv_ocl_printf(__malloc_prwalk_debug2, reinterpret_cast<unsigned long>(temp));
+#endif
+
+  struct device_heap_t *device_heap_ptr = reinterpret_cast<struct device_heap_t *>(temp->deviceheap[0]);
+
+ #ifdef INCLUDE_SPIRV_OCL_PRINT
+    __spirv_ocl_printf(__malloc_prwalk_debug3, device_heap_ptr);
+#endif
+
   random_walk_params_t *prwalk = device_heap_ptr->prwalkparams;
 
-  unsigned long* ptr_superblk = device_heap_ptr->ptr_superblk;
+  unsigned long * ptr_superblk = device_heap_ptr->ptr_superblk;
+
+#ifdef  INCLUDE_SPIRV_OCL_PRINT
+     __spirv_ocl_printf(__malloc_prwalk_debug2, reinterpret_cast<unsigned long>(prwalk));
+
+
+
+    __spirv_ocl_printf(__malloc_prwalk_debug3, ptr_superblk);
+#endif
 
   //id<1> global_id =item.get_global_id(); //need equivalent of this in the compiler..
   int walklength = prwalk->walk_length;
-  int walk_id = 1 ; // NHOW TO GET GOLBAL ID FOR WORKITEM ..?global_id; 
+  int walk_id = __spirv_BuiltInGlobalLinearId() ; // NHOW TO GET GOLBAL ID FOR WORKITEM ..?global_id; 
   float positive_bias = 0.5f;
-  unsigned long alloc_ptr = 0;
+
   unsigned int num_heap_blks=0;
   int ret_val = 0;
   // Access data directly via USM pointers
@@ -124,12 +166,23 @@ void *malloc(size_t size) {
     int modulo_size = (k > 4) ? 1 : (10 / k) ; // value of 10 indicates number of 10percent segments within the whole heap
     int partition_range  =  NUM_OF_SUPERBLOCKS_PER_HEAP / modulo_size ;
 
-    unsigned int local_id =  (__spirv_BuiltInWorkgroupSize(1) * __spirv_BuiltInWorkgroupSize(0) *    \
+    unsigned int local_id = (__spirv_BuiltInWorkgroupSize(1) * __spirv_BuiltInWorkgroupSize(0) *    \
                             __spirv_BuiltInLocalInvocationId(2)) +                                 \
                             (__spirv_BuiltInWorkgroupSize(0) *                                      \
                             __spirv_BuiltInLocalInvocationId(1)) +                                 \
                             __spirv_BuiltInLocalInvocationId(0);
-                                                        
+  // Debug print in device code
+#ifdef INCLUDE_SPIRV_OCL_PRINT
+   __spirv_ocl_printf(__malloc_prwalk_debug1,local_id);
+
+ // __spirv_ocl_printf(__malloc_prwalk_debug1, __spirv_BuiltInLocalInvocationId(0));
+  //  __spirv_ocl_printf(__malloc_prwalk_debug1, __spirv_BuiltInLocalInvocationId(1));
+  //    __spirv_ocl_printf(__malloc_prwalk_debug1, __spirv_BuiltInWorkgroupSize(0));
+   //     __spirv_ocl_printf(__malloc_prwalk_debug1, __spirv_BuiltInLocalInvocationId(2));
+   //       __spirv_ocl_printf(__malloc_prwalk_debug1, __spirv_BuiltInWorkgroupSize(0));
+   //         __spirv_ocl_printf(__malloc_prwalk_debug1, __spirv_BuiltInWorkgroupSize(1));
+#endif    
+
     int block_range = (modulo_size == 1)? device_heap_ptr->max_num_blocks : (partition_range * NUM_OF_HEAP_BLOCKS_PER_SUPERBLOCK);
     index_range_start = (modulo_size == 1) ? 0 : (local_id % modulo_size)*(partition_range * NUM_OF_HEAP_BLOCKS_PER_SUPERBLOCK);
     index_range_end = index_range_start + (block_range -1);
@@ -138,6 +191,9 @@ void *malloc(size_t size) {
 
   }
 
+#ifdef INCLUDE_SPIRV_OCL_PRINT
+ __spirv_ocl_printf(__malloc_prwalk_debug1,size);
+#endif
   oneapi::mkl::rng::device::uniform<int> random_pos(index_range_start, index_range_end);
 
   oneapi::mkl::rng::device::philox4x32x10 local_engine( base_seed, base_subseed);
@@ -145,6 +201,9 @@ void *malloc(size_t size) {
   current_index =  oneapi::mkl::rng::device::generate(random_pos,local_engine);   
 
   int range = ((size/device_heap_ptr->blocksize)) ?  (step_size*0.1*(size/device_heap_ptr->blocksize)) + (size/device_heap_ptr->blocksize) : step_size * 1   ;
+
+  
+
 
 for (int i = 0; i < walklength; ++i) 
 {
@@ -165,7 +224,14 @@ for (int i = 0; i < walklength; ++i)
   } else if (current_index >= index_range_end) {
   current_index = index_range_end - 1;
 
-}               
+}       
+#ifdef INCLUDE_SPIRV_OCL_PRINT        
+__spirv_ocl_printf(__malloc_prwalk_debug3,(ptr_superblk));
+__spirv_ocl_printf(__malloc_prwalk_debug1,(current_index));
+__spirv_ocl_printf(__malloc_prwalk_debug1,(size));
+__spirv_ocl_printf(__malloc_prwalk_debug1,(index_range_end));
+__spirv_ocl_printf(__malloc_prwalk_debug1,(device_heap_ptr->blocksize));
+#endif
 
   ret_val = dev_malloc(ptr_superblk , current_index , size, index_range_end, device_heap_ptr->blocksize);
   if(ret_val >= 0)
@@ -183,21 +249,74 @@ for (int i = 0; i < walklength; ++i)
 
 }
 
+#ifdef INCLUDE_SPIRV_OCL_PRINT   
   // Debug print in device code
   __spirv_ocl_printf(__malloc_prwalk_debug, prwalk->num_walks,
                      prwalk->walk_length, prwalk->index_range_start,
                      prwalk->index_range_end, prwalk->step_size);
-  return reinterpret_cast<void *>(device_heap_ptr->base);
+#endif
+
+  return reinterpret_cast<void *>(alloc_ptr);
 }
 
 DEVICE_EXTERN_C
-void free(void *ptr) { return; }
+void free(void *ptr) {
+
+  /* Invoke kernel for freeing */
+  if(ptr != 0) //for valid allocation pointers
+  {
+    unsigned int byte_offset;
+    unsigned short int superblk_offset;
+    unsigned int block_offset;
+    unsigned int partition_bytes;
+    unsigned int ret_val;
+    unsigned long alloc_ptr = reinterpret_cast<unsigned long>(ptr);
+
+    partition_bytes = 0;
+
+    struct allocator_context_t *temp = reinterpret_cast<struct allocator_context_t *> (__DeviceAllocCtxPtr.get());
 
 
-int dev_malloc(unsigned long* device_superblk, unsigned int start_blk, unsigned int size, unsigned int end_blk, unsigned int base_blk_size)
+    struct device_heap_t *device_heap_ptr = reinterpret_cast<struct device_heap_t *>(temp->deviceheap[0]);
+
+#ifdef INCLUDE_SPIRV_OCL_PRINT
+   __spirv_ocl_printf(__malloc_prwalk_debug2, reinterpret_cast<unsigned long>(temp));
+    __spirv_ocl_printf(__malloc_prwalk_debug3, device_heap_ptr);
+#endif
+    unsigned long * ptr_superblk = device_heap_ptr->ptr_superblk;
+
+
+    byte_offset = alloc_ptr - device_heap_ptr->base;
+
+    block_offset = (byte_offset / device_heap_ptr->blocksize); //which block 
+    partition_bytes = byte_offset % (device_heap_ptr->blocksize);
+
+    ret_val = dev_free(ptr_superblk,block_offset,partition_bytes,device_heap_ptr->blocksize);
+
+    if(ret_val == 0)
+    {
+#ifdef INCLUDE_SPIRV_OCL_PRINT
+      __spirv_ocl_printf(__malloc_prwalk_debug4, ptr);
+#endif
+    }
+    else
+    {
+#ifdef INCLUDE_SPIRV_OCL_PRINT
+      __spirv_ocl_printf(__malloc_prwalk_debug5, ptr);
+#endif
+    }
+
+  }
+
+
+  return; 
+}
+
+
+int dev_malloc(unsigned long * device_superblk, unsigned int start_blk, unsigned int size, unsigned int end_blk, unsigned int base_blk_size)
 {
-  unsigned long ExpectedValue;
-  unsigned long DesiredValue;
+  unsigned long  ExpectedValue;
+  unsigned long  DesiredValue;
 
   int ret_val;  // used to return the offset of the current allocation in the first block assigned into it
   unsigned short iter_count;
@@ -226,9 +345,9 @@ int dev_malloc(unsigned long* device_superblk, unsigned int start_blk, unsigned 
   do
   {
 
-   // sycl::atomic_ref<unsigned long, sycl::memory_order::relaxed,sycl::memory_scope::device,sycl::access::address_space::global_space>atomic_element((device_superblk[start_blk+iter_count]));  
+   // sycl::atomic_ref<unsigned long , sycl::memory_order::relaxed,sycl::memory_scope::device,sycl::access::address_space::global_space>atomic_element((device_superblk[start_blk+iter_count]));  
    // ExpectedValue = atomic_element.load();
-    ExpectedValue =  __spirv_AtomicLoad(&(device_superblk[start_blk+iter_count]),1, 896 );
+    ExpectedValue =  __spirv_AtomicLoad((unsigned long SPIR_GLOBAL*)&(device_superblk[start_blk+iter_count]),1, 896 );
 
     allocated_size =0;
     benable_partition_for_size = false;
@@ -275,7 +394,7 @@ int dev_malloc(unsigned long* device_superblk, unsigned int start_blk, unsigned 
 
             mask = (found_fit) ? mask : (1 << count_free_blks) -1; //recalculate mask when we can accomodate partial allocation in the current block //BUG fix to swap the true and false statements, if found_fit is false then recalculate mask 
             mask = (found_fit) ? (mask << mask_position ) & 0xff : (mask << (NUM_PARTITIONS_IN_BLOCK-count_free_blks)) & 0xff;
-            unsigned long alloc_length = (found_fit) ? (1 << ((required_blks<<1) -1)): 0x3;
+            unsigned long  alloc_length = (found_fit) ? (1 << ((required_blks<<1) -1)): 0x3;
             unsigned int alloc_mask = ((alloc_length << (mask_position<<1)) | ((ExpectedValue >> 16) & 0xffff));
             DesiredValue  = (found_fit) ? 0 | (ExpectedValue >> 32): size; // BUG FIX. when we can accomdoate complete allocation with in the current block, i.e found_Fit == true, we should retain the value of the size from the expected value in the desired value, as there is no update for the current allocation on the size field
             DesiredValue = (found_fit) ? (alloc_mask << 16) : ((DesiredValue << 32) | (alloc_mask << 16)); // size cannot exceed 4GB
@@ -342,7 +461,7 @@ int dev_malloc(unsigned long* device_superblk, unsigned int start_blk, unsigned 
         }                
       }
 
-    } while((__spirv_AtomicCompareExchange(&(device_superblk[start_blk+iter_count]),  1, 896, 896, DesiredValue, ExpectedValue) == false));
+    } while((__spirv_AtomicCompareExchange((unsigned long SPIR_GLOBAL*)&(device_superblk[start_blk+iter_count]),  1, 896, 896, (unsigned long) DesiredValue, (unsigned long)ExpectedValue) == false));
  
 
     num_blks = (allocated_size > 0) ? (num_blks + 1) : num_blks;
@@ -358,9 +477,9 @@ int dev_malloc(unsigned long* device_superblk, unsigned int start_blk, unsigned 
   unsigned int partition_size = (base_blk_size/NUM_PARTITIONS_IN_BLOCK);
   while((remaining_size > 0) && (num_blks > 0)) //loop to unwind and release the blocks
   {
-    //sycl::atomic_ref<unsigned long, sycl::memory_order::relaxed,sycl::memory_scope::device,sycl::access::address_space::global_space>atomic_element((device_superblk[start_blk+count_of_blks]));  
+    //sycl::atomic_ref<unsigned long , sycl::memory_order::relaxed,sycl::memory_scope::device,sycl::access::address_space::global_space>atomic_element((device_superblk[start_blk+count_of_blks]));  
    // ExpectedValue = atomic_element.load();
-   ExpectedValue =  __spirv_AtomicLoad(&(device_superblk[start_blk+count_of_blks]),1,896);
+   ExpectedValue =  __spirv_AtomicLoad((unsigned long SPIR_GLOBAL*)&(device_superblk[start_blk+count_of_blks]),1,896);
 
 
     do // this do while loop takes care of failure of compare exchange , we dont need to recalculate the values for the blocks we already determined to be free, 
@@ -403,7 +522,7 @@ int dev_malloc(unsigned long* device_superblk, unsigned int start_blk, unsigned 
           deallocate_size = (deallocate_size >= base_blk_size) ? deallocate_size - base_blk_size : 0;
         }
       }
-    } while((__spirv_AtomicCompareExchange(&(device_superblk[start_blk+count_of_blks]),1,896,896, DesiredValue , ExpectedValue) == false));
+    } while((__spirv_AtomicCompareExchange((unsigned long SPIR_GLOBAL*)&(device_superblk[start_blk+count_of_blks]),1,896,896, (unsigned long)DesiredValue , (unsigned long)ExpectedValue) == false));
     num_blks--; //should reach zero to end the loop
     count_of_blks++;
     ret_val = -count_of_blks; // to indicate that we have unwound the allocation 
@@ -411,4 +530,133 @@ int dev_malloc(unsigned long* device_superblk, unsigned int start_blk, unsigned 
 #endif
   return ret_val;
 }
+
+
+unsigned int dev_free(unsigned long* device_superblk, unsigned int start_blk, unsigned int byte_offset, unsigned int base_blk_size)
+{
+    unsigned long ExpectedValue;
+    unsigned long DesiredValue;
+    unsigned int ret_val;
+    unsigned int size;
+    unsigned int deallocated_size;
+    unsigned int iter_count = 0;    
+    
+
+    ret_val = 0;
+    DesiredValue = 0;
+	iter_count  = 0;
+
+	size = 0;
+	deallocated_size = 0;
+
+    do
+    {
+		//sycl::atomic_ref<unsigned long, sycl::memory_order::relaxed,sycl::memory_scope::device,sycl::access::address_space::global_space>atomic_element((device_superblk[start_blk + iter_count]));  
+		//ExpectedValue = atomic_element.load();
+      ExpectedValue =  __spirv_AtomicLoad((unsigned long SPIR_GLOBAL*)&(device_superblk[start_blk + iter_count]),1, 896 );
+
+        do
+        {
+            deallocated_size = 0; // need to reset to take care of compare exchange failure that could lead to updated expected value
+            if(ExpectedValue & 0xf)// lower nibble byte0
+            {
+                unsigned char partition;
+                unsigned short desired_byte1;
+                unsigned int desired_byte4567;
+
+                partition= (ExpectedValue >> 4) & 0xf ; // upper nibble byte0
+                if(partition)
+                {   
+                  unsigned int blk_bit_vector = (ExpectedValue >> 8) & 0xff;
+                  unsigned short blk_length_vector = (ExpectedValue >> 16) & 0xffff;
+                  unsigned int ExAlloc_length =  (ExpectedValue >> 32) & 0xffffffff; 
+                  unsigned int partition_size = (base_blk_size/NUM_PARTITIONS_IN_BLOCK);
+
+                    if(iter_count == 0) // first block of the allocation being freed
+                    {
+
+                      unsigned int blk_index =  (byte_offset/partition_size) ;  //must be with in 0 through  6 , as 7th index is the last partition within the block
+
+                      /* Its a bug to have allocation length as zero at the first block during freeing. 
+                      Possible values are 00 - zero length ,xx --allocation span is with in this block nad the numebr indicates how many blks,
+                      11 -allocation cross block boundary so interpret the allocation length from the 16bits*/
+                      unsigned char allocation_type = (blk_length_vector >> (blk_index<<1)) & 0x3 ;  //blk_offset range is 0 through  6  and allocation length is 1 - 8.
+
+
+                      size = (allocation_type == 0x3) ? ExAlloc_length : 0;  // reset to extract cross block allocation length if its a cross block allocation
+                      desired_byte4567 = (allocation_type == 0x3) ?  0 : ExAlloc_length ; // this free resets the value to 0 if the allocation is a cross block allocation
+             
+
+                      if(allocation_type != 0x3) /* with-in the current block */
+                      {
+                        unsigned short bit_alloc_len = (blk_length_vector >> (blk_index<<1)) & 0xffff;
+                        unsigned short alloc_len     = (__spirv_ocl_ctz(bit_alloc_len) + 1) >> 1;
+                        unsigned int bit_vector_mask = ((1 << (alloc_len)) - 1) & 0xff ;
+                        bit_vector_mask = bit_vector_mask << blk_index;
+                        blk_bit_vector = ((~bit_vector_mask) & blk_bit_vector) & 0xff;
+                        unsigned char partition_info = (blk_bit_vector == 0) ? 0 : (ExpectedValue & 0xff);
+                        unsigned int alloc_len_mask  = ((1 << (alloc_len <<1)) - 1)& 0xffff; // prepare mask to shut off all the bits for this allocation
+                        alloc_len_mask = alloc_len_mask << (blk_index << 1); // BUG FIX ..the allocalength _ mask is 2bits per partition block so blk_index<<1
+                        alloc_len_mask = (~(alloc_len_mask) & blk_length_vector) & 0xffff;
+                        DesiredValue = (partition_info == 0) ? 0 : desired_byte4567;
+                        DesiredValue = (partition_info == 0) ? 0 : (DesiredValue << 32 | (alloc_len_mask << 16) | (blk_bit_vector << 8) | (partition_info));
+                        size  = (alloc_len * partition_size);
+
+                        deallocated_size = size;
+                      }
+                      else
+                      {
+                        unsigned int bit_vector_mask = ((1 << (NUM_PARTITIONS_IN_BLOCK-blk_index)) - 1) & 0xff ;
+                        bit_vector_mask     = ~(bit_vector_mask << blk_index) ;	
+                        blk_bit_vector = (bit_vector_mask & blk_bit_vector) & 0xff;
+                        unsigned char partition_info = (blk_bit_vector == 0) ? 0 : (ExpectedValue & 0xff);
+                        unsigned short alloc_len_mask = (~(0x3 << (blk_index<<1))) & 0xffff;
+                        unsigned int desired_alloc_len_mask  = (blk_bit_vector == 0) ?  0: (alloc_len_mask & ((ExpectedValue >> 16) & 0xffff));
+                        DesiredValue = 0;
+                        DesiredValue = (partition_info == 0) ? 0 : (desired_alloc_len_mask << 16) | (blk_bit_vector << 8) | (partition_info);
+                        deallocated_size = (NUM_PARTITIONS_IN_BLOCK-blk_index) * 	partition_size;		
+                      }
+
+
+                    }
+                    else /* any other block - as in middle or last..middle blks should never be partitioned as contiguity is lost  */ 
+                    {
+                      /* The blocks should be at the start of the byte as other wise contiguity is lost  */
+                      unsigned int blk_count = (size%partition_size) ? (size/partition_size) + 1 : (size/partition_size); 
+                      unsigned int blk_bit_vector_mask =  ((1 << blk_count) - 1) & 0xff ;         
+
+                      blk_bit_vector = ((~(blk_bit_vector_mask)) & blk_bit_vector) & 0xff;
+                      unsigned char partition_info = (blk_bit_vector == 0) ? 0 : (ExpectedValue & 0xff);
+                      DesiredValue = (partition_info == 0) ? 0 : (blk_bit_vector << 8); 
+                      DesiredValue = (partition_info == 0) ? 0 : (DesiredValue) | ExpectedValue;      
+                      deallocated_size =	size;	
+
+                    }
+
+                }
+                else // not partitioned - first, middle , last
+                {
+                  size = (iter_count == 0) ? (ExpectedValue >> 32) & 0xffffffff : size;
+                  DesiredValue = 0;
+                  deallocated_size = base_blk_size;
+                }
+
+            }
+            else
+            {
+              size = 0;
+              break;
+            }
+        }while((__spirv_AtomicCompareExchange((unsigned long SPIR_GLOBAL*)&(device_superblk[start_blk + iter_count]),1,896,896, (unsigned long)DesiredValue , (unsigned long)ExpectedValue) == false));
+
+          size = (deallocated_size > 0) ? size-deallocated_size : size; // this needs ot be decremented only if the allocation crosses the block
+          iter_count = (deallocated_size > 0) ? iter_count+1 : iter_count; // incremented to go to the next block
+          ret_val = size;
+
+    } while((size > 0) && ((start_blk+iter_count) < ((NUM_OF_SUPERBLOCKS_PER_HEAP* NUM_OF_HEAP_BLOCKS_PER_SUPERBLOCK)-1))); // the allocation should not cross the number of blocks available
+
+    return ret_val;
+
+}
+
 #endif
