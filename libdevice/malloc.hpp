@@ -5,7 +5,7 @@
 
 #define HEAP_SIZE                                  (0x800000)
 #define NUM_OF_HEAPS                               (1)
-#define RANDOM_WALK_LENGTH                         (1)
+
 #define NUM_OF_SUPERBLOCKS_PER_HEAP                (2048)
 #define NUM_OF_HEAP_BLOCKS_PER_SUPERBLOCK          (32)
 #define INCLUDE_UNWINDING                          (1)
@@ -325,7 +325,8 @@ int dev_malloc(unsigned long * device_superblk, unsigned int start_blk, unsigned
   unsigned int  remaining_size;
   unsigned int  allocated_size;
   bool benable_partition_for_size;
-
+  bool bloop_back;
+  unsigned long atomic_exgh_value;
    
 
   if(size == 0)
@@ -341,7 +342,7 @@ int dev_malloc(unsigned long * device_superblk, unsigned int start_blk, unsigned
   remaining_size = size;
   benable_partition_for_size = false;
   ret_val = -1;
-
+  bloop_back = false;
   do
   {
 
@@ -460,8 +461,14 @@ int dev_malloc(unsigned long * device_superblk, unsigned int start_blk, unsigned
           ret_val = 0;
         }                
       }
-
-    } while((__spirv_AtomicCompareExchange((unsigned long SPIR_GLOBAL*)&(device_superblk[start_blk+iter_count]),  1, 896, 896, (unsigned long) DesiredValue, (unsigned long)ExpectedValue) == false));
+      bloop_back = false;
+      atomic_exgh_value = __spirv_AtomicCompareExchange((unsigned long SPIR_GLOBAL*)&(device_superblk[start_blk+iter_count]),  1, 896, 896, (unsigned long) DesiredValue, (unsigned long)ExpectedValue);
+      if(atomic_exgh_value != ExpectedValue) //check if atomic exchange failed
+      {
+        ExpectedValue = atomic_exgh_value;
+        bloop_back = true;
+      }
+    } while(bloop_back == true);
  
 
     num_blks = (allocated_size > 0) ? (num_blks + 1) : num_blks;
@@ -475,6 +482,7 @@ int dev_malloc(unsigned long * device_superblk, unsigned int start_blk, unsigned
   unsigned int count_of_blks = 0;
   int deallocate_size = size - remaining_size;
   unsigned int partition_size = (base_blk_size/NUM_PARTITIONS_IN_BLOCK);
+  bloop_back = false;
   while((remaining_size > 0) && (num_blks > 0)) //loop to unwind and release the blocks
   {
     //sycl::atomic_ref<unsigned long , sycl::memory_order::relaxed,sycl::memory_scope::device,sycl::access::address_space::global_space>atomic_element((device_superblk[start_blk+count_of_blks]));  
@@ -522,7 +530,16 @@ int dev_malloc(unsigned long * device_superblk, unsigned int start_blk, unsigned
           deallocate_size = (deallocate_size >= base_blk_size) ? deallocate_size - base_blk_size : 0;
         }
       }
-    } while((__spirv_AtomicCompareExchange((unsigned long SPIR_GLOBAL*)&(device_superblk[start_blk+count_of_blks]),1,896,896, (unsigned long)DesiredValue , (unsigned long)ExpectedValue) == false));
+      
+      bloop_back = false;      
+      atomic_exgh_value =__spirv_AtomicCompareExchange((unsigned long SPIR_GLOBAL*)&(device_superblk[start_blk+count_of_blks]),1,896,896, (unsigned long)DesiredValue , (unsigned long)ExpectedValue);
+      if(atomic_exgh_value != ExpectedValue) //check if atomic exchange failed
+      {
+        ExpectedValue = atomic_exgh_value;
+        bloop_back = true;
+      }
+    } while(bloop_back == true);
+
     num_blks--; //should reach zero to end the loop
     count_of_blks++;
     ret_val = -count_of_blks; // to indicate that we have unwound the allocation 
@@ -540,6 +557,8 @@ unsigned int dev_free(unsigned long* device_superblk, unsigned int start_blk, un
     unsigned int size;
     unsigned int deallocated_size;
     unsigned int iter_count = 0;    
+    unsigned long atomic_exgh_value;
+    bool bloop_back;
     
 
     ret_val = 0;
@@ -548,7 +567,7 @@ unsigned int dev_free(unsigned long* device_superblk, unsigned int start_blk, un
 
 	size = 0;
 	deallocated_size = 0;
-
+  bloop_back = false;
     do
     {
 		//sycl::atomic_ref<unsigned long, sycl::memory_order::relaxed,sycl::memory_scope::device,sycl::access::address_space::global_space>atomic_element((device_superblk[start_blk + iter_count]));  
@@ -647,7 +666,15 @@ unsigned int dev_free(unsigned long* device_superblk, unsigned int start_blk, un
               size = 0;
               break;
             }
-        }while((__spirv_AtomicCompareExchange((unsigned long SPIR_GLOBAL*)&(device_superblk[start_blk + iter_count]),1,896,896, (unsigned long)DesiredValue , (unsigned long)ExpectedValue) == false));
+            bloop_back = false;
+            atomic_exgh_value = __spirv_AtomicCompareExchange((unsigned long SPIR_GLOBAL*)&(device_superblk[start_blk + iter_count]),1,896,896, (unsigned long)DesiredValue , (unsigned long)ExpectedValue) ;
+            if(atomic_exgh_value != ExpectedValue) //check if atomic exchange failed
+            {
+                ExpectedValue = atomic_exgh_value;
+                bloop_back = true;
+            }
+
+        }while(bloop_back == true);
 
           size = (deallocated_size > 0) ? size-deallocated_size : size; // this needs ot be decremented only if the allocation crosses the block
           iter_count = (deallocated_size > 0) ? iter_count+1 : iter_count; // incremented to go to the next block

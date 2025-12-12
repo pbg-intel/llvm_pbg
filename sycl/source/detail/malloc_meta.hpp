@@ -1,6 +1,6 @@
 #define HEAP_SIZE                                  (0x800000)//(0x1400000)
 #define NUM_OF_HEAPS                               (1)
-#define RANDOM_WALK_LENGTH                         (1)
+#define RANDOM_WALK_LENGTH                         (50)
 #define NUM_OF_SUPERBLOCKS_PER_HEAP                (2048)
 #define NUM_OF_HEAP_BLOCKS_PER_SUPERBLOCK          (32)
 #define INCLUDE_UNWINDING                          (1)
